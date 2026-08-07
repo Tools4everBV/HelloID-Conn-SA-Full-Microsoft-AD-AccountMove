@@ -1,0 +1,12 @@
+[
+  {
+    "Name": "Employee",
+    "Path": "OU=Employees,OU=Users,OU=Enyoi,DC=enyoi-media,DC=local",
+    "Selected": 0
+  },
+  {
+    "Name": "External",
+    "Path": "OU=External,OU=Users,OU=Enyoi,DC=enyoi-media,DC=local",
+    "Selected": 0
+  }
+]
