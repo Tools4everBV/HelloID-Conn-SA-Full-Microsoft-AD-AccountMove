@@ -8,7 +8,7 @@ else {
 }
 
 # Global variables
-$searchOUs = $AdUsersSearchOu
+$searchOUs = $ADUsersMoveSearchOU
 
 # Fixed values
 $propertiesToSelect = @(
@@ -16,11 +16,7 @@ $propertiesToSelect = @(
     "SamAccountName",
     "DisplayName",
     "UserPrincipalName",
-    "Enabled",
-    "Description", 
-    "Company",
-    "Department",
-    "Title"
+    "DistinguishedName"
 ) # Properties to select from Microsoft AD, comma separated
 
 # Set debug logging
@@ -54,9 +50,18 @@ try {
     }
     Write-Information "Queried AD account(s) matching the filter [$filter] in OU(s) [$($searchOUs)]. Result count: $(($adUsers | Measure-Object).Count)"
 
-    # Sort and Send results to HelloID
+    # Sort and Send results to HelloID (with OU property added)
     $actionMessage = "sending results to HelloID"
     $adUsers | Sort-Object -Property DisplayName | ForEach-Object {
+        # Extract OU from user's DistinguishedName
+        # Example DN: CN=Doe\, John,OU=Active,OU=Users,DC=domain,DC=com
+        # We want: OU=Active,OU=Users,DC=domain,DC=com
+        # Use lookahead to find the comma before OU= (handles escaped commas in CN)
+        $userOU = $_.DistinguishedName -replace '^CN=.*?,(?=OU=)', ''
+        
+        # Add OrganizationalUnit property to the user object
+        $_ | Add-Member -MemberType NoteProperty -Name "OrganizationalUnit" -Value $userOU -Force
+        
         Write-Output $_
     } 
 }
@@ -66,3 +71,4 @@ catch {
     Write-Error "Error $($actionMessage). Error: $($ex.Exception.Message)"
     # exit # use when using multiple try/catch and the script must stop
 }
+

@@ -1,103 +1,125 @@
 [
-  {
-    "key": "searchValue",
-    "templateOptions": {
-      "label": "Search (wildcard search in Name, Display name, UserPrincipalName and Mail)",
-      "placeholder": "Name, Display name, UserPrincipalName or Mail (use * to search all users)",
-      "required": true,
-      "minLength": 1
+    {
+        "label":  "Select user",
+        "fields":  [
+                       {
+                           "key":  "searchValue",
+                           "templateOptions":  {
+                                                   "label":  "Search (wildcard search in Name, Display name, UserPrincipalName and Mail)",
+                                                   "placeholder":  "Name, Display name, UserPrincipalName or Mail (use * to search all users)",
+                                                   "required":  true,
+                                                   "minLength":  1
+                                               },
+                           "type":  "input",
+                           "summaryVisibility":  "Hide element",
+                           "requiresTemplateOptions":  true,
+                           "requiresKey":  true,
+                           "requiresDataSource":  false
+                       },
+                       {
+                           "key":  "gridUsers",
+                           "templateOptions":  {
+                                                   "label":  "Select user",
+                                                   "required":  true,
+                                                   "grid":  {
+                                                                "columns":  [
+                                                                                {
+                                                                                    "headerName":  "Display Name",
+                                                                                    "field":  "DisplayName"
+                                                                                },
+                                                                                {
+                                                                                    "headerName":  "User Principal Name",
+                                                                                    "field":  "UserPrincipalName"
+                                                                                },
+                                                                                {
+                                                                                    "headerName":  "Organizational Unit",
+                                                                                    "field":  "OrganizationalUnit"
+                                                                                }
+                                                                            ],
+                                                                "height":  300,
+                                                                "rowSelection":  "single"
+                                                            },
+                                                   "dataSourceConfig":  {
+                                                                            "dataSourceGuid":  "$dataSourceGuid_0",
+                                                                            "input":  {
+                                                                                          "propertyInputs":  [
+                                                                                                                 {
+                                                                                                                     "propertyName":  "searchValue",
+                                                                                                                     "otherFieldValue":  {
+                                                                                                                                             "otherFieldKey":  "searchValue"
+                                                                                                                                         }
+                                                                                                                 }
+                                                                                                             ]
+                                                                                      }
+                                                                        },
+                                                   "useFilter":  true,
+                                                   "allowCsvDownload":  true
+                                               },
+                           "type":  "grid",
+                           "summaryVisibility":  "Show",
+                           "requiresTemplateOptions":  true,
+                           "requiresKey":  true,
+                           "requiresDataSource":  true
+                       }
+                   ]
     },
-    "type": "input",
-    "summaryVisibility": "Hide element",
-    "requiresTemplateOptions": true,
-    "requiresKey": true,
-    "requiresDataSource": false
-  },
-  {
-    "key": "gridUsers",
-    "templateOptions": {
-      "label": "Select user",
-      "required": true,
-      "grid": {
-        "columns": [
-          {
-            "headerName": "DisplayName",
-            "field": "displayName"
-          },
-          {
-            "headerName": "UserPrincipalName",
-            "field": "UserPrincipalName"
-          },
-          {
-            "headerName": "Enabled",
-            "field": "Enabled"
-          },
-          {
-            "headerName": "Title",
-            "field": "Title"
-          },
-          {
-            "headerName": "Department",
-            "field": "Department"
-          },
-          {
-            "headerName": "Description",
-            "field": "Description"
-          }
-        ],
-        "height": 300,
-        "rowSelection": "single"
-      },
-      "dataSourceConfig": {
-        "dataSourceGuid": "$dataSourceGuid_0",
-        "input": {
-          "propertyInputs": [
-            {
-              "propertyName": "searchValue",
-              "otherFieldValue": {
-                "otherFieldKey": "searchValue"
-              }
-            }
-          ]
-        }
-      },
-      "useFilter": true,
-      "allowCsvDownload": true
-    },
-    "type": "multiselectgrid",
-    "summaryVisibility": "Show",
-    "requiresTemplateOptions": true,
-    "requiresKey": true,
-    "requiresDataSource": true
-  },
-  {
-    "key": "ou",
-    "templateOptions": {
-      "label": "AD location",
-      "required": true,
-      "useObjects": false,
-      "useDataSource": true,
-      "useFilter": false,
-      "options": [
-        "Option 1",
-        "Option 2",
-        "Option 3"
-      ],
-      "valueField": "Path",
-      "textField": "Name",
-      "dataSourceConfig": {
-        "dataSourceGuid": "$dataSourceGuid_1",
-        "input": {
-          "propertyInputs": []
-        }
-      },
-      "defaultSelectorProperty": "Selected"
-    },
-    "type": "dropdown",
-    "summaryVisibility": "Show",
-    "textOrLabel": "text",
-    "requiresTemplateOptions": true,
-    "requiresKey": true,
-    "requiresDataSource": false
-  }
+    {
+        "label":  "Move user",
+        "fields":  [
+                       {
+                           "key":  "currentOU",
+                           "templateOptions":  {
+                                                   "label":  "Current OU",
+                                                   "readonly":  true,
+                                                   "useDependOn":  true,
+                                                   "dependOn":  "gridUsers",
+                                                   "dependOnProperty":  "OrganizationalUnit"
+                                               },
+                           "type":  "input",
+                           "summaryVisibility":  "Show",
+                           "requiresTemplateOptions":  true,
+                           "requiresKey":  true,
+                           "requiresDataSource":  false
+                       },
+                       {
+                           "key":  "ou",
+                           "templateOptions":  {
+                                                   "label":  "OU",
+                                                   "required":  true,
+                                                   "useObjects":  false,
+                                                   "useDataSource":  true,
+                                                   "useFilter":  true,
+                                                   "options":  [
+                                                                   "Option 1",
+                                                                   "Option 2",
+                                                                   "Option 3"
+                                                               ],
+                                                   "valueField":  "ObjectGuid",
+                                                   "textField":  "DisplayValue",
+                                                   "dataSourceConfig":  {
+                                                                            "dataSourceGuid":  "$dataSourceGuid_1",
+                                                                            "input":  {
+                                                                                          "propertyInputs":  [
+                                                                                                                 {
+                                                                                                                     "propertyName":  "selectedUser",
+                                                                                                                     "otherFieldValue":  {
+                                                                                                                                             "otherFieldKey":  "gridUsers"
+                                                                                                                                         }
+                                                                                                                 }
+                                                                                                             ]
+                                                                                      }
+                                                                        },
+                                                   "defaultSelectorProperty":  "ObjectGuid",
+                                                   "useDefault":  true
+                                               },
+                           "hideExpression":  "!model[\"gridUsers\"]",
+                           "type":  "dropdown",
+                           "summaryVisibility":  "Show",
+                           "textOrLabel":  "text",
+                           "requiresTemplateOptions":  true,
+                           "requiresKey":  true,
+                           "requiresDataSource":  false
+                       }
+                   ]
+    }
 ]

@@ -7,7 +7,7 @@ $portalUrl = "https://CUSTOMER.helloid.com"
 $apiKey = "API_KEY"
 $apiSecret = "API_SECRET"
 $delegatedFormAccessGroupNames = @("") #Only unique names are supported. Groups must exist!
-$delegatedFormCategories = @("User Management","Active Directory") #Only unique names are supported. Categories will be created if not exists
+$delegatedFormCategories = @("Active Directory","User Management") #Only unique names are supported. Categories will be created if not exists
 $script:debugLogging = $false #Default value: $false. If $true, the HelloID resource GUIDs will be shown in the logging
 $script:duplicateForm = $false #Default value: $false. If $true, the HelloID resource names will be changed to import a duplicate Form
 $script:duplicateFormSuffix = "_tmp" #the suffix will be added to all HelloID resource names to generate a duplicate form with different resource names
@@ -16,12 +16,21 @@ $script:duplicateFormSuffix = "_tmp" #the suffix will be added to all HelloID re
 #NOTE: You can also update the HelloID Global variable values afterwards in the HelloID Admin Portal: https://<CUSTOMER>.helloid.com/admin/variablelibrary
 $globalHelloIDVariables = [System.Collections.Generic.List[object]]@();
 
-#Global variable #1 >> AdUsersSearchOu
+#Global variable #1 >> ADUsersMoveOU
 $tmpName = @'
-AdUsersSearchOu
+ADUsersMoveOU
 '@ 
 $tmpValue = @'
-OU=Users,OU=enyoi,DC=enyoi,DC=local;OU=UsersLite,OU=enyoi,DC=enyoi,DC=local
+OU=Actief,OU=Users,OU=WVS,DC=wvs,DC=local;OU=Accounts,OU=_MarkForDeletion,DC=wvs,DC=local
+'@ 
+$globalHelloIDVariables.Add([PSCustomObject]@{name = $tmpName; value = $tmpValue; secret = "False"});
+
+#Global variable #2 >> ADUsersMoveSearchOU
+$tmpName = @'
+ADUsersMoveSearchOU
+'@ 
+$tmpValue = @'
+OU=Actief,OU=Users,OU=WVS,DC=wvs,DC=local;OU=Actief Leveranciers,OU=Users,OU=WVS,DC=wvs,DC=local;OU=Accounts,OU=_MarkForDeletion,DC=wvs,DC=local
 '@ 
 $globalHelloIDVariables.Add([PSCustomObject]@{name = $tmpName; value = $tmpValue; secret = "False"});
 
@@ -323,21 +332,173 @@ foreach ($item in $globalHelloIDVariables) {
 
 
 <# Begin: HelloID Data sources #>
-<# Begin: DataSource "ad-account-move | AD-account-generate-table-account-types-account-move" #>
-$tmpStaticValue = @'
-[{"Name":"Employee","Path":"OU=Employees,OU=Users,OU=Enyoi,DC=enyoi-media,DC=local","Selected":0},{"Name":"External","Path":"OU=External,OU=Users,OU=Enyoi,DC=enyoi-media,DC=local","Selected":0}]
+<# Begin: DataSource "AD - Account - Move OU | AD-Get-OUs" #>
+$tmpPsScript = @'
+# Variables configured in datasource
+$selectedUser = $datasource.selectedUser
+$searchOus = $ADUsersMoveOU -split ';'
+
+# Global variables
+# Outcommented as these are set from Global Variables
+# $ADServer = "" # Optional, if not set the default domain controller is used
+
+# Fixed values
+$searchScope = "Subtree" # Options: Base, OneLevel, Subtree
+
+$propertiesToSelect = @(
+    "ObjectGuid",
+    "Name",
+    "DistinguishedName",
+    "CanonicalName"
+) # Properties to select from Microsoft AD, comma separated
+
+# Set debug logging
+$VerbosePreference = "SilentlyContinue"
+$InformationPreference = "Continue"
+$WarningPreference = "Continue"
+
+try {
+    # Get the current user with DistinguishedName to extract current OU
+    $actionMessage = "querying AD user [$($selectedUser.UserPrincipalName)] to get current OU"
+    
+    $getADUserSplatParams = @{
+        Filter      = "ObjectGuid -eq '$($selectedUser.ObjectGuid)'"
+        Properties  = @("DistinguishedName")
+        Verbose     = $false
+        ErrorAction = "Stop"
+    }
+    
+    # Add server parameter if specified
+    if (-not [string]::IsNullOrEmpty($ADServer)) {
+        $getADUserSplatParams['Server'] = $ADServer
+    }
+    
+    $adUser = Get-ADUser @getADUserSplatParams
+    
+    if ($null -ne $adUser) {
+        # Extract OU from user's DistinguishedName
+        # Example DN: CN=Calker\, Raymond,OU=Actief,OU=Users,DC=domain,DC=com
+        # We want: OU=Actief,OU=Users,DC=domain,DC=com
+        # Use lookahead to find the comma before OU= (handles escaped commas in CN)
+        $userDN = $adUser.DistinguishedName
+        $currentUserOU = $userDN -replace '^CN=.*?,(?=OU=)', ''
+        Write-Information "Queried AD user [$($selectedUser.UserPrincipalName)]. Current OU: [$currentUserOU]"
+    }
+    else {
+        Write-Information "Queried AD user [$($selectedUser.UserPrincipalName)]. Result: User not found in Active Directory"
+        Write-Warning "Could not find user [$($selectedUser.UserPrincipalName)] in Active Directory"
+        $currentUserOU = $null
+    }
+
+    # Build filter for OUs
+    # Warning! When no searchValue is specified, all OUs will be retrieved
+    if (-not $searchOus -or $searchOus -eq "*" -or $searchOus.Count -eq 0) {
+        $filter = "*"
+    }
+    else {
+        # Build a filter that matches any of the specified OU names
+        $filterParts = @()
+        foreach ($ouName in $searchOus) {
+            $ouName = $ouName.Trim()
+            if ($ouName) {
+                $filterParts += "(DistinguishedName -eq '$ouName')"
+            }
+        }
+        if ($filterParts.Count -gt 0) {
+            $filter = $filterParts -join " -or "
+        }
+        else {
+            $filter = "*"
+        }
+    }
+
+    # Get AD Organizational Units
+    # Microsoft docs: https://learn.microsoft.com/en-us/powershell/module/activedirectory/get-adorganizationalunit?view=windowsserver2025-ps
+    $actionMessage = "querying AD OUs with filter [$filter]"
+
+    $getADOUsSplatParams = @{
+        Filter      = $filter
+        Properties  = $propertiesToSelect
+        SearchScope = $searchScope
+        Verbose     = $false
+        ErrorAction = "Stop"
+    }
+    
+    # Add server parameter if specified
+    if (-not [string]::IsNullOrEmpty($ADServer)) {
+        $getADOUsSplatParams['Server'] = $ADServer
+    }
+
+    $adOUs = Get-ADOrganizationalUnit @getADOUsSplatParams | Select-Object -Property $propertiesToSelect
+
+    Write-Information "Queried AD OUs that match filter [$filter]. Result count: $(($adOUs | Measure-Object).Count)"
+
+    # Send results to HelloID
+    if (($adOUs | Measure-Object).Count -gt 0) {
+        # First, output the current user's OU (if found and in the list)
+        if (-not [string]::IsNullOrEmpty($currentUserOU)) {
+            $currentOU = $adOUs | Where-Object { $_.DistinguishedName -eq $currentUserOU }
+            if ($null -ne $currentOU) {
+                # Add DisplayValue property with (current) indicator
+                $displayValue = "$($currentOU.DistinguishedName) (current)"
+                $currentOU | Add-Member -MemberType NoteProperty -Name "DisplayValue" -Value $displayValue -Force
+                
+                Write-Verbose "Outputting current user OU first: [$($currentOU.DistinguishedName)]"
+                Write-Output $currentOU
+                
+                # Then output all other OUs (excluding the current one)
+                $otherOUs = $adOUs | Where-Object { $_.DistinguishedName -ne $currentUserOU }
+                foreach ($adOU in $otherOUs) {
+                    # Add DisplayValue property without (current) indicator
+                    $adOU | Add-Member -MemberType NoteProperty -Name "DisplayValue" -Value $adOU.DistinguishedName -Force
+                    Write-Output $adOU
+                }
+            }
+            else {
+                # Current OU not in the filtered list, output all OUs
+                Write-Warning "Current user OU [$currentUserOU] not found in filtered results, outputting all OUs"
+                foreach ($adOU in $adOUs) {
+                    # Add DisplayValue property without (current) indicator
+                    $adOU | Add-Member -MemberType NoteProperty -Name "DisplayValue" -Value $adOU.DistinguishedName -Force
+                    Write-Output $adOU
+                }
+            }
+        }
+        else {
+            # No current OU found, output all OUs
+            Write-Warning "No current user OU found, outputting all OUs"
+            foreach ($adOU in $adOUs) {
+                # Add DisplayValue property without (current) indicator
+                $adOU | Add-Member -MemberType NoteProperty -Name "DisplayValue" -Value $adOU.DistinguishedName -Force
+                Write-Output $adOU
+            }
+        }
+    }
+}
+catch {
+    $ex = $PSItem
+    $auditMessage = "Error $($actionMessage). Error: $($ex.Exception.Message)"
+    $warningMessage = "Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($ex.Exception.Message)"
+
+    Write-Warning $warningMessage
+    Write-Error $auditMessage
+}
+
 '@ 
 $tmpModel = @'
-[{"key":"Name","type":0},{"key":"Path","type":0},{"key":"Selected","type":0}]
+[{"key":"ObjectGuid","type":0},{"key":"Name","type":0},{"key":"DistinguishedName","type":0},{"key":"CanonicalName","type":0},{"key":"DisplayValue","type":0}]
+'@ 
+$tmpInput = @'
+[{"description":null,"translateDescription":false,"inputFieldType":1,"key":"selectedUser","type":0,"options":1}]
 '@ 
 $dataSourceGuid_1 = [PSCustomObject]@{} 
 $dataSourceGuid_1_Name = @'
-ad-account-move | AD-account-generate-table-account-types-account-move
+AD - Account - Move OU | AD-Get-OUs
 '@ 
-Invoke-HelloIDDatasource -DatasourceName $dataSourceGuid_1_Name -DatasourceType "2" -DatasourceStaticValue $tmpStaticValue -DatasourceModel $tmpModel -returnObject ([Ref]$dataSourceGuid_1) 
-<# End: DataSource "ad-account-move | AD-account-generate-table-account-types-account-move" #>
+Invoke-HelloIDDatasource -DatasourceName $dataSourceGuid_1_Name -DatasourceType "4" -DatasourceInput $tmpInput -DatasourcePsScript $tmpPsScript -DatasourceModel $tmpModel -DataSourceRunInCloud "False" -returnObject ([Ref]$dataSourceGuid_1) 
+<# End: DataSource "AD - Account - Move OU | AD-Get-OUs" #>
 
-<# Begin: DataSource "ad-account-move | AD-Get-Users-Wildcard-Name-DisplayName-UPN-Mail" #>
+<# Begin: DataSource "AD - Account - Move OU | AD-Get-Users-Wildcard-Name-DisplayName-UPN-Mail" #>
 $tmpPsScript = @'
 # Variables configured in form
 $searchValue = $dataSource.searchValue
@@ -349,7 +510,7 @@ else {
 }
 
 # Global variables
-$searchOUs = $AdUsersSearchOu
+$searchOUs = $ADUsersMoveSearchOU
 
 # Fixed values
 $propertiesToSelect = @(
@@ -357,11 +518,7 @@ $propertiesToSelect = @(
     "SamAccountName",
     "DisplayName",
     "UserPrincipalName",
-    "Enabled",
-    "Description", 
-    "Company",
-    "Department",
-    "Title"
+    "DistinguishedName"
 ) # Properties to select from Microsoft AD, comma separated
 
 # Set debug logging
@@ -395,9 +552,18 @@ try {
     }
     Write-Information "Queried AD account(s) matching the filter [$filter] in OU(s) [$($searchOUs)]. Result count: $(($adUsers | Measure-Object).Count)"
 
-    # Sort and Send results to HelloID
+    # Sort and Send results to HelloID (with OU property added)
     $actionMessage = "sending results to HelloID"
     $adUsers | Sort-Object -Property DisplayName | ForEach-Object {
+        # Extract OU from user's DistinguishedName
+        # Example DN: CN=Doe\, John,OU=Active,OU=Users,DC=domain,DC=com
+        # We want: OU=Active,OU=Users,DC=domain,DC=com
+        # Use lookahead to find the comma before OU= (handles escaped commas in CN)
+        $userOU = $_.DistinguishedName -replace '^CN=.*?,(?=OU=)', ''
+        
+        # Add OrganizationalUnit property to the user object
+        $_ | Add-Member -MemberType NoteProperty -Name "OrganizationalUnit" -Value $userOU -Force
+        
         Write-Output $_
     } 
 }
@@ -407,29 +573,30 @@ catch {
     Write-Error "Error $($actionMessage). Error: $($ex.Exception.Message)"
     # exit # use when using multiple try/catch and the script must stop
 }
+
 '@ 
 $tmpModel = @'
-[{"key":"Description","type":0},{"key":"SamAccountName","type":0},{"key":"Title","type":0},{"key":"Company","type":0},{"key":"Department","type":0},{"key":"DisplayName","type":0},{"key":"UserPrincipalName","type":0},{"key":"ObjectGuid","type":0},{"key":"Enabled","type":0}]
+[{"key":"ObjectGuid","type":0},{"key":"SamAccountName","type":0},{"key":"DisplayName","type":0},{"key":"UserPrincipalName","type":0},{"key":"DistinguishedName","type":0},{"key":"OrganizationalUnit","type":0}]
 '@ 
 $tmpInput = @'
 [{"description":null,"translateDescription":false,"inputFieldType":1,"key":"searchValue","type":0,"options":1}]
 '@ 
 $dataSourceGuid_0 = [PSCustomObject]@{} 
 $dataSourceGuid_0_Name = @'
-ad-account-move | AD-Get-Users-Wildcard-Name-DisplayName-UPN-Mail
+AD - Account - Move OU | AD-Get-Users-Wildcard-Name-DisplayName-UPN-Mail
 '@ 
 Invoke-HelloIDDatasource -DatasourceName $dataSourceGuid_0_Name -DatasourceType "4" -DatasourceInput $tmpInput -DatasourcePsScript $tmpPsScript -DatasourceModel $tmpModel -DataSourceRunInCloud "False" -returnObject ([Ref]$dataSourceGuid_0) 
-<# End: DataSource "ad-account-move | AD-Get-Users-Wildcard-Name-DisplayName-UPN-Mail" #>
+<# End: DataSource "AD - Account - Move OU | AD-Get-Users-Wildcard-Name-DisplayName-UPN-Mail" #>
 <# End: HelloID Data sources #>
 
-<# Begin: Dynamic Form "AD Account - Move" #>
+<# Begin: Dynamic Form "AD - Account - Move OU" #>
 $tmpSchema = @"
-[{"key":"searchValue","templateOptions":{"label":"Search (wildcard search in Name, Display name, UserPrincipalName and Mail)","placeholder":"Name, Display name, UserPrincipalName or Mail (use * to search all users)","required":true,"minLength":1},"type":"input","summaryVisibility":"Hide element","requiresTemplateOptions":true,"requiresKey":true,"requiresDataSource":false},{"key":"gridUsers","templateOptions":{"label":"Select user","required":true,"grid":{"columns":[{"headerName":"DisplayName","field":"displayName"},{"headerName":"UserPrincipalName","field":"UserPrincipalName"},{"headerName":"Enabled","field":"Enabled"},{"headerName":"Title","field":"Title"},{"headerName":"Department","field":"Department"},{"headerName":"Description","field":"Description"}],"height":300,"rowSelection":"single"},"dataSourceConfig":{"dataSourceGuid":"$dataSourceGuid_0","input":{"propertyInputs":[{"propertyName":"searchValue","otherFieldValue":{"otherFieldKey":"searchValue"}}]}},"useFilter":true,"allowCsvDownload":true},"type":"multiselectgrid","summaryVisibility":"Show","requiresTemplateOptions":true,"requiresKey":true,"requiresDataSource":true},{"key":"ou","templateOptions":{"label":"AD location","required":true,"useObjects":false,"useDataSource":true,"useFilter":false,"options":["Option 1","Option 2","Option 3"],"valueField":"Path","textField":"Name","dataSourceConfig":{"dataSourceGuid":"$dataSourceGuid_1","input":{"propertyInputs":[]}},"defaultSelectorProperty":"Selected"},"type":"dropdown","summaryVisibility":"Show","textOrLabel":"text","requiresTemplateOptions":true,"requiresKey":true,"requiresDataSource":false}]
+[{"label":"Select user","fields":[{"key":"searchValue","templateOptions":{"label":"Search (wildcard search in Name, Display name, UserPrincipalName and Mail)","placeholder":"Name, Display name, UserPrincipalName or Mail (use * to search all users)","required":true,"minLength":1},"type":"input","summaryVisibility":"Hide element","requiresTemplateOptions":true,"requiresKey":true,"requiresDataSource":false},{"key":"gridUsers","templateOptions":{"label":"Select user","required":true,"grid":{"columns":[{"headerName":"Display Name","field":"DisplayName"},{"headerName":"User Principal Name","field":"UserPrincipalName"},{"headerName":"Organizational Unit","field":"OrganizationalUnit"}],"height":300,"rowSelection":"single"},"dataSourceConfig":{"dataSourceGuid":"$dataSourceGuid_0","input":{"propertyInputs":[{"propertyName":"searchValue","otherFieldValue":{"otherFieldKey":"searchValue"}}]}},"useFilter":true,"allowCsvDownload":true},"type":"grid","summaryVisibility":"Show","requiresTemplateOptions":true,"requiresKey":true,"requiresDataSource":true}]},{"label":"Move user","fields":[{"key":"currentOU","templateOptions":{"label":"Current OU","readonly":true,"useDependOn":true,"dependOn":"gridUsers","dependOnProperty":"OrganizationalUnit"},"type":"input","summaryVisibility":"Show","requiresTemplateOptions":true,"requiresKey":true,"requiresDataSource":false},{"key":"ou","templateOptions":{"label":"OU","required":true,"useObjects":false,"useDataSource":true,"useFilter":true,"options":["Option 1","Option 2","Option 3"],"valueField":"ObjectGuid","textField":"DisplayValue","dataSourceConfig":{"dataSourceGuid":"$dataSourceGuid_1","input":{"propertyInputs":[{"propertyName":"selectedUser","otherFieldValue":{"otherFieldKey":"gridUsers"}}]}},"defaultSelectorProperty":"ObjectGuid","useDefault":true},"hideExpression":"!model[\"gridUsers\"]","type":"dropdown","summaryVisibility":"Show","textOrLabel":"text","requiresTemplateOptions":true,"requiresKey":true,"requiresDataSource":false}]}]
 "@ 
 
 $dynamicFormGuid = [PSCustomObject]@{} 
 $dynamicFormName = @'
-AD Account - Move
+AD - Account - Move OU
 '@ 
 Invoke-HelloIDDynamicForm -FormName $dynamicFormName -FormSchema $tmpSchema  -returnObject ([Ref]$dynamicFormGuid) 
 <# END: Dynamic Form #>
@@ -486,12 +653,12 @@ $delegatedFormCategoryGuids = (ConvertTo-Json -InputObject $delegatedFormCategor
 <# Begin: Delegated Form #>
 $delegatedFormRef = [PSCustomObject]@{guid = $null; created = $null} 
 $delegatedFormName = @'
-AD Account - Move
+AD - Account - Move OU
 '@
 $tmpTask = @'
-{"name":"AD Account - Move","script":"# variables configured in form\r\n$ou = $form.ou.Path\r\n$users = $form.gridUsers\r\n\r\n# Set debug logging\r\n$VerbosePreference = \"SilentlyContinue\"\r\n$InformationPreference = \"Continue\"\r\n$WarningPreference = \"Continue\"\r\n\r\nforeach ($user in $users) {\r\n    try {\r\n        $actionMessage = \"moving AD account for user [$($user.userPrincipalName)] with objectguid [$($user.ObjectGuid)] to OU [$($ou)]\"\r\n\r\n        Move-ADObject -Identity $user.ObjectGuid -TargetPath $ou\r\n\r\n        $Log = @{\r\n            Action            = \"MoveAccount\" # optional. ENUM (undefined = default) \r\n            System            = \"ActiveDirectory\" # optional (free format text) \r\n            Message           = \"Moved AD account for user [$($user.userPrincipalName)] with objectguid [$($user.ObjectGuid)] to OU [$($ou)]\" # required (free format text) \r\n            IsError           = $false # optional. Elastic reporting purposes only. (default = $false. $true = Executed action returned an error) \r\n            TargetDisplayName = $user.userPrincipalName # optional (free format text) \r\n            TargetIdentifier  = $user.ObjectGuid # optional (free format text) \r\n        }\r\n        Write-Information -Tags \"Audit\" -MessageData $log\r\n    }\r\n    catch {\r\n        $ex = $PSItem\r\n        $auditMessage = \"Error $($actionMessage). Error: $($ex.Exception.Message)\"\r\n        $warningMessage = \"Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($ex.Exception.Message)\"\r\n    \r\n        $log = @{\r\n            Action            = \"MoveAccount\" # optional. ENUM (undefined = default) \r\n            System            = \"ActiveDirectory\" # optional (free format text) \r\n            Message           = $auditMessage # required (free format text) \r\n            IsError           = $true # optional. Elastic reporting purposes only. (default = $false. $true = Executed action returned an error) \r\n            TargetDisplayName = $user.userPrincipalName # optional (free format text) \r\n            TargetIdentifier  = $user.ObjectGuid # optional (free format text) \r\n        }\r\n        Write-Information -Tags \"Audit\" -MessageData $log\r\n        Write-Warning $warningMessage\r\n        Write-Error $auditMessage\r\n    }\r\n}","runInCloud":false}
+{"name":"AD - Account - Move OU","script":"# variables configured in form:\r\n$user = $form.gridUsers\r\n$targetOU = $form.ou.DistinguishedName\r\n\r\n# Set debug logging\r\n$VerbosePreference = \"SilentlyContinue\"\r\n$InformationPreference = \"Continue\"\r\n$WarningPreference = \"Continue\"\r\n\r\n# Set TLS to accept TLS, TLS 1.1 and TLS 1.2\r\n[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls -bor [Net.SecurityProtocolType]::Tls11 -bor [Net.SecurityProtocolType]::Tls12\r\n\r\ntry {\r\n    $actionMessage = \"moving AD account for user [$($user.UserPrincipalName)] with objectguid [$($user.ObjectGuid)] to OU [$targetOU]\"\r\n\r\n    $splatMoveADObjectParams = @{\r\n        Identity   = $user.ObjectGuid\r\n        TargetPath = $targetOU\r\n    }\r\n    \r\n    $null = Move-ADObject @splatMoveADObjectParams\r\n    \r\n    $Log = @{\r\n        Action            = \"MoveAccount\" # optional. ENUM (undefined = default) \r\n        System            = \"ActiveDirectory\" # optional (free format text) \r\n        Message           = \"Successfully moved AD account for user [$($user.UserPrincipalName)] with objectguid [$($user.ObjectGuid)] from OU [$($user.OrganizationalUnit)] to OU [$targetOU]\" # required (free format text) \r\n        IsError           = $false # optional. Elastic reporting purposes only. (default = $false. $true = Executed action returned an error) \r\n        TargetDisplayName = $user.UserPrincipalName # optional (free format text) \r\n        TargetIdentifier  = $user.ObjectGuid # optional (free format text) \r\n    }\r\n    #send result back  \r\n    Write-Information -Tags \"Audit\" -MessageData $log    \r\n}\r\ncatch {\r\n    $ex = $PSItem\r\n    $auditMessage = \"Error $($actionMessage). Error: $($ex.Exception.Message)\"\r\n    $warningMessage = \"Error at Line [$($ex.InvocationInfo.ScriptLineNumber)]: $($ex.InvocationInfo.Line). Error: $($ex.Exception.Message)\"    \r\n\r\n    $Log = @{\r\n        Action            = \"MoveAccount\" # optional. ENUM (undefined = default) \r\n        System            = \"ActiveDirectory\" # optional (free format text) \r\n        Message           = \"Error $($actionMessage). Error Message: $auditMessage\" # required (free format text) \r\n        IsError           = $true # optional. Elastic reporting purposes only. (default = $false. $true = Executed action returned an error) \r\n        TargetDisplayName = $user.UserPrincipalName # optional (free format text) \r\n        TargetIdentifier  = $user.ObjectGuid # optional (free format text) \r\n    }\r\n    #send result back  \r\n    Write-Information -Tags \"Audit\" -MessageData $log      \r\n    Write-Warning $warningMessage   \r\n    Write-Error $auditMessage\r\n}","runInCloud":false}
 '@ 
 
-Invoke-HelloIDDelegatedForm -DelegatedFormName $delegatedFormName -DynamicFormGuid $dynamicFormGuid -AccessGroups $delegatedFormAccessGroupGuids -Categories $delegatedFormCategoryGuids -UseFaIcon "True" -FaIcon "fa fa-user-md" -task $tmpTask -returnObject ([Ref]$delegatedFormRef) 
+Invoke-HelloIDDelegatedForm -DelegatedFormName $delegatedFormName -DynamicFormGuid $dynamicFormGuid -AccessGroups $delegatedFormAccessGroupGuids -Categories $delegatedFormCategoryGuids -UseFaIcon "True" -FaIcon "fa fa-arrows-h" -task $tmpTask -returnObject ([Ref]$delegatedFormRef) 
 <# End: Delegated Form #>
 
