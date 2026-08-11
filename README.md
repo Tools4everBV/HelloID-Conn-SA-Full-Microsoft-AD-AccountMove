@@ -1,62 +1,72 @@
-<!-- Description -->
+# HelloID-Conn-SA-Full-AD-AccountMove
+
+| :information_source: Information |
+|:---|
+| This repository contains the connector and configuration code only. The implementer is responsible for acquiring the connection details such as username, password, certificate, etc. You might even need to sign a contract or agreement with the supplier before implementing this connector. Please contact the client's application manager to coordinate the connector requirements. |
+
 ## Description
-This HelloID Service Automation Delegated Form provides AD Account move functionality. The following options are available:
- 1. Search and select the target AD user account
- 2. Show basic AD user account attributes of selected target user
- 3. Select a new AD container for the selected target user
+_HelloID-Conn-SA-Full-AD-AccountMove_ is a delegated form designed for use with HelloID Service Automation (SA). It can be imported into HelloID and customized according to your requirements.
 
+By using this delegated form, you can move Active Directory user accounts to another organizational unit or container. The following options are available:
+1. Search and select one or more Active Directory user accounts
+2. Select the target Active Directory container
+3. The selected accounts are moved to the configured target container
 
-## Versioning
-| Version | Description | Date |
-| - | - | - |
-| 1.0.1   | Added version number and updated all-in-one script | 2021/11/03  |
-| 1.0.0   | Initial release | 2020/09/01  |
+## Getting started
 
-<!-- TABLE OF CONTENTS -->
-## Table of Contents
-* [Description](#description)
-* [All-in-one PowerShell setup script](#all-in-one-powershell-setup-script)
-  * [Getting started](#getting-started)
-* [Post-setup configuration](#post-setup-configuration)
-* [Manual resources](#manual-resources)
-* [Getting help](#getting-help)
+### Requirements
 
+- **Active Directory Access**:
+  The connector requires access to an Active Directory domain with sufficient permissions to search for users and move objects. A service account with appropriate AD permissions is necessary.
 
-## All-in-one PowerShell setup script
-The PowerShell script "createform.ps1" contains a complete PowerShell script using the HelloID API to create the complete Form including user defined variables, tasks and data sources.
+- **HelloID Agent**:
+  A HelloID Agent must be installed and configured to communicate with the Active Directory domain.
 
- _Please note that this script asumes none of the required resources do exists within HelloID. The script does not contain versioning or source control_
+- **PowerShell module 'ActiveDirectory'**:
+  The HelloID Agent must have PowerShell available with Active Directory module support.
 
+### Connection settings
 
-### Getting started
-Please follow the documentation steps on [HelloID Docs](https://docs.helloid.com/hc/en-us/articles/360017556559-Service-automation-GitHub-resources) in order to setup and run the All-in one Powershell Script in your own environment.
+The following user-defined variables are used by the connector.
 
- 
-## Post-setup configuration
-After the all-in-one PowerShell script has run and created all the required resources. The following items need to be configured according to your own environment
- 1. Update the following [user defined variables](https://docs.helloid.com/hc/en-us/articles/360014169933-How-to-Create-and-Manage-User-Defined-Variables)
-<table>
-  <tr><td><strong>Variable name</strong></td><td><strong>Example value</strong></td><td><strong>Description</strong></td></tr>
-  <tr><td>ADusersSearchOU</td><td>[{ "OU": "OU=Disabled Users,OU=HelloID Training,DC=veeken,DC=local"},{ "OU": "OU=Users,OU=HelloID Training,DC=veeken,DC=local"},{"OU": "OU=External,OU=HelloID Training,DC=veeken,DC=local"}]</td><td>Array of Active Directory OUs for scoping AD user accounts in the search result of this form</td></tr>
-</table>
+| Setting         | Description                                                                                                      | Mandatory |
+| --------------- | ---------------------------------------------------------------------------------------------------------------- | --------- |
+| AdUsersSearchOu | Semicolon-separated `;` list of Active Directory OUs used to scope the user search results in the delegated form | Yes       |
 
-## Manual resources
-This Delegated Form uses the following resources in order to run
+## Remarks
 
-### Powershell data source 'AD-user-generate-table-wildcard-move'
-This Powershell data source runs an Active Directory query to search for matching AD user accounts. It uses an array of Active Directory OU's specified as HelloID user defined variable named _"ADusersSearchOU"_ to specify the search scope.
+### User Search
 
-### Powershell data source 'AD-user-generate-table-attributes-basic-move'
-This Powershell data source runs an Active Directory query to select a list of basic user attributes of the selected AD user account.  
+- **Search Functionality:** Users can search for accounts using a wildcard (`*`) to return all users within the specified OUs, or by entering partial text to search across Name, DisplayName, UserPrincipalName, and Mail attributes.
 
-### Static data source 'AD-account-generate-table-account-types-account-move'
-This Static data source returns the available Active Directory containers.
+- **The search scope is limited to the OUs defined in the `AdUsersSearchOu` variable.** Configure this variable carefully to avoid exposing accounts outside the intended scope.
 
-### Delegated form task 'AD-user-move'
-This delegated form task will move the selected AD user account to the selected AD container.
+## Development resources
+
+### PowerShell Module
+This connector uses the ActiveDirectory PowerShell module for managing Active Directory user accounts and organizational units.
+
+- [ActiveDirectory Module Documentation](https://learn.microsoft.com/en-us/powershell/module/activedirectory/)
+
+### Cmdlets
+The following PowerShell cmdlets are used by the connector:
+
+| Cmdlet | Description |
+| --- | --- |
+| Get-ADUser | Retrieves Active Directory user accounts |
+| Get-ADOrganizationalUnit | Retrieves Active Directory organizational units |
+| Move-ADObject | Moves Active Directory objects to a different container |
+
+### Cmdlet documentation
+- [Get-ADUser](https://learn.microsoft.com/en-us/powershell/module/activedirectory/get-aduser)
+- [Get-ADOrganizationalUnit](https://learn.microsoft.com/en-us/powershell/module/activedirectory/get-adorganizationalunit)
+- [Move-ADObject](https://learn.microsoft.com/en-us/powershell/module/activedirectory/move-adobject)
 
 ## Getting help
-_If you need help, feel free to ask questions on our [forum](https://forum.helloid.com/forum/helloid-connectors/service-automation/512-helloid-sa-active-directory-ad-account-move)_
 
-## HelloID Docs
-The official HelloID documentation can be found at: https://docs.helloid.com/
+| :bulb: Tip |
+|:---|
+| For more information on Delegated Forms, please refer to our [documentation](https://docs.helloid.com/en/service-automation/delegated-forms.html) pages. |
+
+## HelloID docs
+The official HelloID documentation can be found at: [https://docs.helloid.com/](https://docs.helloid.com/)
