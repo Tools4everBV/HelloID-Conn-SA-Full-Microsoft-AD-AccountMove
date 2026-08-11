@@ -21,7 +21,7 @@ $tmpName = @'
 ADUsersMoveOU
 '@ 
 $tmpValue = @'
-OU=Actief,OU=Users,OU=WVS,DC=wvs,DC=local;OU=Accounts,OU=_MarkForDeletion,DC=wvs,DC=local
+OU=Users,OU=enyoi,DC=enyoi,DC=local;OU=Marked for Deleteion,OU=Users,OU=enyoi,DC=enyoi,DC=local
 '@ 
 $globalHelloIDVariables.Add([PSCustomObject]@{name = $tmpName; value = $tmpValue; secret = "False"});
 
@@ -30,7 +30,7 @@ $tmpName = @'
 ADUsersMoveSearchOU
 '@ 
 $tmpValue = @'
-OU=Actief,OU=Users,OU=WVS,DC=wvs,DC=local;OU=Actief Leveranciers,OU=Users,OU=WVS,DC=wvs,DC=local;OU=Accounts,OU=_MarkForDeletion,DC=wvs,DC=local
+OU=Users,OU=enyoi,DC=enyoi,DC=local;OU=UsersLite,OU=enyoi,DC=enyoi,DC=local
 '@ 
 $globalHelloIDVariables.Add([PSCustomObject]@{name = $tmpName; value = $tmpValue; secret = "False"});
 
